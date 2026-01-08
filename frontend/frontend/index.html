@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Repo Analyzer | Code Intelligence</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Fira+Code:wght@400;500&display=swap');
+        
+        :root {
+            --bg-main: #000000;
+            --sidebar-bg: #0a0a0a;
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --border-color: rgba(255, 255, 255, 0.1);
+            --text-primary: #ffffff;
+            --text-secondary: #a1a1aa;
+            --accent: #ffffff;
+            --accent-contrast: #000000;
+            --accent-gradient: linear-gradient(135deg, #ffffff 0%, #a1a1aa 100%);
+            --card-bg: #111111;
+            --user-msg-bg: #ffffff;
+            --user-msg-text: #000000;
+        }
+
+        [data-theme="light"] {
+            --bg-main: #ffffff;
+            --sidebar-bg: #f8f8f8;
+            --glass-bg: rgba(0, 0, 0, 0.03);
+            --border-color: rgba(0, 0, 0, 0.1);
+            --text-primary: #000000;
+            --text-secondary: #4b5563;
+            --accent: #000000;
+            --accent-contrast: #ffffff;
+            --accent-gradient: linear-gradient(135deg, #000000 0%, #4b5563 100%);
+            --card-bg: #ffffff;
+            --user-msg-bg: #000000;
+            --user-msg-text: #ffffff;
+        }
+
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: var(--bg-main); 
+            color: var(--text-primary);
+            transition: background 0.3s ease, color 0.3s ease;
+        }
+
+        /* 2. ADDED MARKDOWN STYLING TO PREVENT CLUMPS */
+        .chat-content h1, .chat-content h2, .chat-content h3 { font-weight: 700; margin-top: 1rem; margin-bottom: 0.5rem; display: block; }
+        .chat-content p { margin-bottom: 0.75rem; }
+        .chat-content ul { list-style-type: disc; margin-left: 1.5rem; margin-bottom: 1rem; }
+        .chat-content li { margin-bottom: 0.25rem; }
+        .chat-content code { background: rgba(128,128,128,0.2); padding: 0.2rem 0.4rem; border-radius: 4px; font-family: 'Fira Code', monospace; }
+
+        .code-font { font-family: 'Fira Code', monospace; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 10px; }
+
+        .glass { 
+            background: var(--glass-bg); 
+            backdrop-filter: blur(20px); 
+            border: 1px solid var(--border-color); 
+        }
+
+        .shiny-silver {
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+        }
+
+        .sidebar-item:hover { background: var(--glass-bg); color: var(--text-primary); }
+        .tab-active { color: var(--text-primary); border-bottom: 2px solid var(--accent); }
+        
+        .setting-panel {
+            position: absolute; bottom: 70px; left: 20px; width: 200px;
+            z-index: 50; display: none; animation: slideUp 0.2s ease-out;
+            background: var(--card-bg); border: 1px solid var(--border-color);
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .msg-user { background: var(--user-msg-bg) !important; color: var(--user-msg-text) !important; }
+        .msg-bot { background: var(--glass-bg); color: var(--text-primary); }
+    </style>
+</head>
+<body class="h-screen overflow-hidden">
+
+<div class="flex h-full">
+    <aside class="w-64 border-r border-[var(--border-color)] bg-[var(--sidebar-bg)] flex flex-col hidden md:flex transition-colors duration-300">
+        <div class="p-6 border-b border-[var(--border-color)] flex items-center gap-3">
+            <div class="w-8 h-8 bg-[var(--accent)] rounded flex items-center justify-center text-[var(--accent-contrast)] shadow-xl shadow-black/5">
+                <i data-lucide="shield-check" size="18"></i>
+            </div>
+            <h1 class="text-lg tracking-tighter shiny-silver">REPO ANALYZER</h1>
+        </div>
+        
+        <div class="flex border-b border-[var(--border-color)] px-2">
+            <button onclick="switchTab('explorer')" id="btn-explorer" class="flex-1 py-4 text-[10px] font-bold uppercase tracking-widest tab-active transition-all">Explorer</button>
+            <button onclick="switchTab('history')" id="btn-history" class="flex-1 py-4 text-[10px] font-bold uppercase tracking-widest opacity-50 transition-all">History</button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4">
+            <div id="view-explorer" class="space-y-1">
+                <div id="file-tree-container">
+                    <p class="text-[10px] opacity-40 text-center py-10 italic">No repository loaded</p>
+                </div>
+            </div>
+            <div id="view-history" class="hidden space-y-2">
+                <div id="history-container">
+                    <p class="text-[10px] opacity-40 text-center py-10 italic">No search history</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="p-4 border-t border-[var(--border-color)] relative">
+            <div id="setting-panel" class="setting-panel rounded-xl p-4 shadow-2xl">
+                <p class="text-[10px] font-bold mb-3 uppercase tracking-widest opacity-60">Preferences</p>
+                <button onclick="toggleTheme()" class="w-full flex items-center justify-between p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 text-xs transition-all">
+                    <span id="theme-text">Switch to Light</span>
+                    <i data-lucide="sun-moon" size="14"></i>
+                </button>
+            </div>
+
+            <div class="flex items-center justify-between">
+                <button onclick="toggleSettings()" class="p-2 hover:bg-[var(--glass-bg)] rounded-lg transition-all text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+                    <i data-lucide="settings" size="18"></i>
+                </button>
+                <div class="flex items-center gap-2 text-[10px] font-medium tracking-widest opacity-50 uppercase">
+                    <div id="status-dot" class="w-1.5 h-1.5 rounded-full bg-zinc-600"></div>
+                    <span id="status-text">Ready</span>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col">
+        <header class="h-20 border-b border-[var(--border-color)] glass flex items-center px-8 gap-6 z-10">
+            <div class="relative flex-1 max-w-2xl group">
+                <i data-lucide="search" class="absolute left-4 top-3 text-[var(--text-secondary)] group-focus-within:text-[var(--text-primary)] transition-colors" size="18"></i>
+                <input id="repo-url" type="text" placeholder="username/repository" 
+                    class="w-full bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl py-3 pl-12 pr-4 text-sm focus:outline-none transition-all text-[var(--text-primary)]">
+            </div>
+            <button id="analyze-btn" onclick="analyzeRepo()" class="bg-[var(--accent)] hover:opacity-90 text-[var(--accent-contrast)] text-xs px-6 py-3 rounded-xl font-bold tracking-widest uppercase shadow-2xl transition-all flex items-center gap-2">
+                Analyze <i data-lucide="arrow-right" size="14"></i>
+            </button>
+        </header>
+
+        <div id="chat-window" class="flex-1 overflow-y-auto p-10 space-y-10 max-w-5xl mx-auto w-full">
+            <div class="flex gap-6 items-start opacity-80">
+                <div class="w-10 h-10 rounded-xl glass flex items-center justify-center shrink-0 border border-[var(--border-color)]">
+                    <i data-lucide="sparkles" size="20"></i>
+                </div>
+                <div class="space-y-4 max-w-2xl">
+                    <h2 class="text-2xl font-bold tracking-tight shiny-silver">Intelligent Code Analysis</h2>
+                    <p class="text-sm leading-relaxed text-[var(--text-secondary)]">
+                        Provide a GitHub repository path to begin. I will deconstruct the file structure and provide high-level insights.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <footer class="p-8 border-t border-[var(--border-color)] glass">
+            <div class="max-w-4xl mx-auto relative flex items-center gap-4">
+                <div class="relative flex-1">
+                    <textarea id="user-input" rows="1" placeholder="Type your query..." 
+                        class="w-full bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl py-5 pl-6 pr-14 text-sm focus:outline-none resize-none overflow-hidden transition-all text-[var(--text-primary)] shadow-inner"></textarea>
+                    <button onclick="sendUserMessage()" class="absolute right-4 top-4 p-2 bg-[var(--accent)] rounded-lg text-[var(--accent-contrast)] hover:opacity-80 transition-all">
+                        <i data-lucide="corner-down-left" size="18"></i>
+                    </button>
+                </div>
+            </div>
+        </footer>
+    </main>
+</div>
+
+<script>
+// ---------------------- DOM & STATE ----------------------
+const chatWindow = document.getElementById('chat-window');
+const userInput = document.getElementById('user-input');
+const fileTreeContainer = document.getElementById('file-tree-container');
+const repoUrlInput = document.getElementById('repo-url');
+
+let searchHistory = JSON.parse(localStorage.getItem('repo_history') || '[]');
+let currentRepoFiles = [];
+
+// ---------------------- THEME & TABS ----------------------
+function toggleSettings() { document.getElementById('setting-panel').style.display = (document.getElementById('setting-panel').style.display === 'block') ? 'none' : 'block'; }
+function applyTheme(theme) { document.documentElement.setAttribute('data-theme', theme); localStorage.setItem('theme', theme); }
+applyTheme(localStorage.getItem('theme') || 'dark');
+
+function switchTab(tab) {
+    document.getElementById('view-explorer').classList.toggle('hidden', tab !== 'explorer');
+    document.getElementById('view-history').classList.toggle('hidden', tab !== 'history');
+    document.getElementById('btn-explorer').classList.toggle('tab-active', tab === 'explorer');
+    document.getElementById('btn-history').classList.toggle('tab-active', tab === 'history');
+}
+
+// ---------------------- CORE LOGIC ----------------------
+
+function addMessage(role, content) {
+    const wrapper = document.createElement('div');
+    wrapper.className = `flex gap-6 ${role === 'user' ? 'flex-row-reverse' : ''}`;
+    
+    // Parse Markdown for the assistant's response
+    const formattedContent = role === 'assistant' ? marked.parse(content) : content;
+
+    wrapper.innerHTML = `
+        <div class="w-10 h-10 rounded-xl glass border border-[var(--border-color)] flex items-center justify-center shrink-0">
+            <i data-lucide="${role === 'user' ? 'user' : 'zap'}" size="18"></i>
+        </div>
+        <div class="space-y-2 max-w-[80%]">
+            <div class="chat-content text-sm leading-relaxed p-5 rounded-2xl glass ${role === 'user' ? 'msg-user' : 'msg-bot'}">
+                ${formattedContent}
+            </div>
+        </div>`;
+    chatWindow.appendChild(wrapper);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+    lucide.createIcons();
+}
+
+async function analyzeRepo() {
+    // Clean URL: Remove domain and trailing slashes
+    let url = repoUrlInput.value.trim().replace('https://github.com/', '').replace(/\/$/, '');
+    if (!url) return;
+    
+    repoUrlInput.value = url;
+    addMessage('assistant', `Analyzing <b>${url}</b>...`);
+
+    try {
+        const res = await fetch("http://127.0.0.1:8000/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ repo_url: url })
+        });
+        const data = await res.json();
+        
+        currentRepoFiles = data.files || [];
+        renderFileTree(currentRepoFiles);
+        addMessage('assistant', `Sync complete for ${url}. Explorer updated.`);
+        switchTab('explorer');
+    } catch (err) {
+        addMessage('assistant', "Error connecting to server. Is main.py running?");
+    }
+}
+
+async function sendUserMessage() {
+    const text = userInput.value.trim();
+    let url = repoUrlInput.value.trim().replace('https://github.com/', '').replace(/\/$/, '');
+    
+    if (!text || !url) return;
+    addMessage('user', text);
+    userInput.value = '';
+
+    try {
+        const res = await fetch("http://127.0.0.1:8000/chat", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ repo_url: url, question: text })
+        });
+        const data = await res.json();
+        addMessage('assistant', data.answer);
+    } catch (err) {
+        addMessage('assistant', "Chat error. Check backend.");
+    }
+}
+
+function renderFileTree(files) {
+    fileTreeContainer.innerHTML = '';
+    files.forEach(file => {
+        const div = document.createElement('div');
+        div.className = "flex items-center gap-2 p-2 sidebar-item rounded text-xs";
+        div.innerHTML = `<i data-lucide="${file.type === 'tree' ? 'folder' : 'file'}" size="14"></i><span>${file.path}</span>`;
+        fileTreeContainer.appendChild(div);
+    });
+    lucide.createIcons();
+}
+
+// Initial icons
+lucide.createIcons();
+</script>
+</body>
+</html>
